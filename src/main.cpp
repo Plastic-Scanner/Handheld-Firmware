@@ -61,6 +61,10 @@ float calibrate_readings[] = {26016, 46824, 82300, 80176, 42096, 53390, 19076, 1
 float normalized[8];
 float snv[8];
 
+const int buttonPin = 8;  // the number of the pushbutton pin
+int buttonState = 0;  // variable for reading the pushbutton status
+
+
 // Function to calculate the mean of an array
 float calculateMean(float values[], int size) {
   float sum = 0;
@@ -137,6 +141,7 @@ void calibrate_scan() {
 void setup() {
   Serial.begin(9600); // Initialize the serial communication
   while (!Serial); // Wait for Serial to be ready
+  pinMode(buttonPin, INPUT_PULLUP);
 
   /////////////////////////db/////////////////////////////
   Wire.begin(); // Initialize I2C communication
@@ -182,96 +187,106 @@ void setup() {
   u8g2.begin();
   u8g2.clearBuffer(); // Clear the internal memory of the display
   u8g2.setFont(u8g2_font_inb16_mf); // Choose a suitable font
-  u8g2.drawStr(0, 16, "Calibrate"); // Display "Calibrate" on the screen
+  u8g2.drawStr(0, 16, "Press to"); // Display "Scan" on the screen
+  u8g2.drawStr(0, 36, "Calibrate"); // Display "Scan" on the screen
   u8g2.sendBuffer(); // Transfer internal memory to the display
-  delay(3000); // Wait for 3 seconds before starting calibration
+  while (digitalRead(buttonPin) == HIGH) {
+    // wait for button press
+  }
   calibrate_scan();
+  u8g2.clearBuffer(); // Clear the internal memory of the display
+  u8g2.drawStr(0, 16, "Done!"); // Display "Scan" on the screen
+  u8g2.sendBuffer(); // Transfer internal memory to the display
+  delay(1000); // Wait for 3 seconds before starting calibration
 }
 
 void loop() {
   // Wait for input to start the scan
-  /////////////////////////screen/////////////////////////////
-  Serial.println("Start SCAN in 3 seconds");
+  // check if the pushbutton is pressed. If it is, the buttonState is HIGH:
   u8g2.clearBuffer(); // Clear the internal memory of the display
-  u8g2.drawStr(0, 16, "Scan"); // Display "Scan" on the screen
+  u8g2.drawStr(0, 16, "Press to"); // Display "Scan" on the screen
+  u8g2.drawStr(0, 36, "Scan"); // Display "Scan" on the screen
   u8g2.sendBuffer(); // Transfer internal memory to the display
-  delay(3000); // Wait for 3 seconds before starting the scan
-  scan();
-  /////// preprocess data
-  // Normalize
-  for (int i = 0; i < 8; i++) {
-    normalized[i] = (float)readings[i] / (float)calibrate_readings[i];
-  }
-
-  // Check quality of the sample
-  if (normalized[0] > TooBright) {
-    Serial.println("Sample too bright");
-    u8g2.clearBuffer(); // Clear the internal memory of the display
-    u8g2.drawStr(0, 16, "Too Bright"); // Display "Too Bright" on the screen
-    u8g2.sendBuffer(); // Transfer internal memory to the display
-    delay(2000); // Wait for 2 seconds
-  } else if (normalized[0] < TooDark) {
-    Serial.println("Sample too dark");
-    u8g2.clearBuffer(); // Clear the internal memory of the display
-    u8g2.drawStr(0, 16, "Too Dark"); // Display "Too Dark" on the screen
-    u8g2.sendBuffer(); // Transfer internal memory to the display
-    delay(2000); // Wait for 2 seconds
-  }
-else {
-    // SNV transform
-    float mean = calculateMean(normalized, 8); // Calculate the mean of normalized values
-    float std = calculateStdDev(normalized, 8); // Calculate the standard deviation of normalized values
-
-    // Apply SNV (Standard Normal Variate) transformation
+  if (digitalRead(buttonPin) == LOW) {
+    /////////////////////////screen/////////////////////////////
+    Serial.println("Start SCAN in 3 seconds");
+    scan();
+    /////// preprocess data
+    // Normalize
     for (int i = 0; i < 8; i++) {
-      snv[i] = (normalized[i] - mean) / std;
+      normalized[i] = (float)readings[i] / (float)calibrate_readings[i];
     }
 
-    ////// Run TensorFlow inference
-    for (int i = 0; i < 8; i++) {
-      tflInputTensor->data.f[i] = snv[i]; // Set input tensor values with SNV-transformed data
+    // Check quality of the sample
+    if (normalized[0] > TooBright) {
+      Serial.println("Sample too bright");
+      u8g2.clearBuffer(); // Clear the internal memory of the display
+      u8g2.drawStr(0, 16, "Too Bright"); // Display "Too Bright" on the screen
+      u8g2.sendBuffer(); // Transfer internal memory to the display
+      delay(2000); // Wait for 2 seconds
+    } else if (normalized[0] < TooDark) {
+      Serial.println("Sample too dark");
+      u8g2.clearBuffer(); // Clear the internal memory of the display
+      u8g2.drawStr(0, 16, "Too Dark"); // Display "Too Dark" on the screen
+      u8g2.sendBuffer(); // Transfer internal memory to the display
+      delay(2000); // Wait for 2 seconds
     }
-    TfLiteStatus invokeStatus = tflInterpreter->Invoke(); // Run the inference
-    if (invokeStatus != kTfLiteOk) {
-      Serial.println("Invoke failed!"); // Print an error message if inference fails
-      while (1); // Infinite loop to halt execution
-      return;
-    }
+    else {
+      // SNV transform
+      float mean = calculateMean(normalized, 8); // Calculate the mean of normalized values
+      float std = calculateStdDev(normalized, 8); // Calculate the standard deviation of normalized values
 
-    ////// Output the results
-    float maxLikelihood = -1.0; // Initialize with a negative value
-    int maxLikelihoodIndex = -1;
-    u8g2.clearBuffer(); // Clear the internal memory of the display
-
-    // Loop through plastic types
-    for (int i = 0; i < NUM_PLASTICS; i++) {
-      Serial.print(PLASTICS[i]);
-      Serial.print(": ");
-      Serial.println(tflOutputTensor->data.f[i], 6); // Print the likelihood with 6 decimal places
-
-      // Check if the current plastic has a higher likelihood
-      if (tflOutputTensor->data.f[i] > maxLikelihood) {
-        maxLikelihood = tflOutputTensor->data.f[i];
-        maxLikelihoodIndex = i;
+      // Apply SNV (Standard Normal Variate) transformation
+      for (int i = 0; i < 8; i++) {
+        snv[i] = (normalized[i] - mean) / std;
       }
+
+      ////// Run TensorFlow inference
+      for (int i = 0; i < 8; i++) {
+        tflInputTensor->data.f[i] = snv[i]; // Set input tensor values with SNV-transformed data
+      }
+      TfLiteStatus invokeStatus = tflInterpreter->Invoke(); // Run the inference
+      if (invokeStatus != kTfLiteOk) {
+        Serial.println("Invoke failed!"); // Print an error message if inference fails
+        while (1); // Infinite loop to halt execution
+        return;
+      }
+
+      ////// Output the results
+      float maxLikelihood = -1.0; // Initialize with a negative value
+      int maxLikelihoodIndex = -1;
+      u8g2.clearBuffer(); // Clear the internal memory of the display
+
+      // Loop through plastic types
+      for (int i = 0; i < NUM_PLASTICS; i++) {
+        Serial.print(PLASTICS[i]);
+        Serial.print(": ");
+        Serial.println(tflOutputTensor->data.f[i], 6); // Print the likelihood with 6 decimal places
+
+        // Check if the current plastic has a higher likelihood
+        if (tflOutputTensor->data.f[i] > maxLikelihood) {
+          maxLikelihood = tflOutputTensor->data.f[i];
+          maxLikelihoodIndex = i;
+        }
+      }
+
+      if (maxLikelihoodIndex != -1) {
+        // Print the most likely plastic type
+        Serial.print("Most likely plastic: ");
+        Serial.println(PLASTICS[maxLikelihoodIndex]);
+
+        // Display the most likely plastic type and its likelihood on the screen
+        u8g2.drawStr(0, 32, PLASTICS[maxLikelihoodIndex]);
+        u8g2.setCursor(64, 32);
+        u8g2.print(int(tflOutputTensor->data.f[maxLikelihoodIndex] * 100)); // Display likelihood as a percentage
+        u8g2.print("%");
+      }
+      u8g2.sendBuffer(); // Transfer the internal memory to the display
+      Serial.println("done");
+      Serial.println();
+      delay(5000); // Wait for 5 seconds before the next iteration
     }
-
-    if (maxLikelihoodIndex != -1) {
-      // Print the most likely plastic type
-      Serial.print("Most likely plastic: ");
-      Serial.println(PLASTICS[maxLikelihoodIndex]);
-
-      // Display the most likely plastic type and its likelihood on the screen
-      u8g2.drawStr(0, 32, PLASTICS[maxLikelihoodIndex]);
-      u8g2.setCursor(64, 32);
-      u8g2.print(int(tflOutputTensor->data.f[maxLikelihoodIndex] * 100)); // Display likelihood as a percentage
-      u8g2.print("%");
-    }
-
-    u8g2.sendBuffer(); // Transfer the internal memory to the display
-
-    Serial.println("done");
-    Serial.println();
-    delay(5000); // Wait for 5 seconds before the next iteration
+  }  
+  else {
   }
 }
