@@ -32,11 +32,11 @@ byte tensorArena[tensorArenaSize] __attribute__((aligned(16)));
 
 // Array to map gesture index to a name
 const char* PLASTICS[] = {
-  "other",
-  "PMMA",
   "PS",
+  "PC",
+  "PMMA",
   "PET",
-  "PC"
+  "other"
 };
 #define NUM_PLASTICS (sizeof(PLASTICS) / sizeof(PLASTICS[0]))
 
@@ -53,8 +53,8 @@ U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
 
 ////////////////////////other//////////////////////
 // Define threshold values for brightness and darkness
-#define TooBright 1.4
-#define TooDark 0.6
+#define TooBright 0.99
+#define TooDark 0.5
 
 float readings[] = {22977, 36106, 52788, 71216, 27235, 35036, 10490, 6381};
 float calibrate_readings[] = {26016, 46824, 82300, 80176, 42096, 53390, 19076, 13274};
@@ -63,6 +63,9 @@ float snv[8];
 
 const int buttonPin = 8;  // the number of the pushbutton pin
 int buttonState = 0;  // variable for reading the pushbutton status
+
+#define VBATPIN A13
+
 
 
 // Function to calculate the mean of an array
@@ -92,13 +95,13 @@ void scan(){
       delay(10);
 
       // Skip the first 10 readings
-      for (uint8_t j=0; j<10; j++) {
+      for (uint8_t j=0; j<15; j++) {
           while (! nau.available()) delay(1);
           nau.getReading();
       }
       // Read sensor value
       while (! nau.available()) delay(1);
-      readings[i] = nau.getAverage(10);
+      readings[i] = nau.getAverage(15);
       ledDriver.setLedState(i, LED_OFF);
   }
 
@@ -119,14 +122,14 @@ void calibrate_scan() {
     delay(10);
 
     // Skip the first 10 readings to allow the sensor to stabilize
-    for (uint8_t j = 0; j < 10; j++) {
+    for (uint8_t j = 0; j < 15; j++) {
       while (!nau.available()) delay(1); // Wait for a reading to be available
       nau.getReading(); // Discard the reading
     }
 
     // Read sensor value (ADC)
     while (!nau.available()) delay(1); // Wait for a reading to be available
-    calibrate_readings[i] = nau.getAverage(10); // Store the calibrated reading
+    calibrate_readings[i] = nau.getAverage(15); // Store the calibrated reading
     ledDriver.setLedState(i, LED_OFF); // Turn off the LED for this sensor
   }
 
@@ -221,7 +224,7 @@ void loop() {
     if (normalized[0] > TooBright) {
       Serial.println("Sample too bright");
       u8g2.clearBuffer(); // Clear the internal memory of the display
-      u8g2.drawStr(0, 16, "Too Bright"); // Display "Too Bright" on the screen
+      u8g2.drawStr(0, 16, "Incorrect"); // Display "Too Bright" on the screen
       u8g2.sendBuffer(); // Transfer internal memory to the display
       delay(2000); // Wait for 2 seconds
     } else if (normalized[0] < TooDark) {
@@ -277,15 +280,24 @@ void loop() {
 
         // Display the most likely plastic type and its likelihood on the screen
         u8g2.drawStr(0, 32, PLASTICS[maxLikelihoodIndex]);
-        u8g2.setCursor(64, 32);
+        u8g2.setCursor(72, 32);
         u8g2.print(int(tflOutputTensor->data.f[maxLikelihoodIndex] * 100)); // Display likelihood as a percentage
         u8g2.print("%");
       }
+      int measuredvbat = analogReadMilliVolts(VBATPIN);
+      int batteryVoltage = map(measuredvbat, 1500, 2100, 0, 100); // Map the voltage to a percentage (0-100%)
+      u8g2.setCursor(70, 60);
+      u8g2.setFont(u8g2_font_scrum_te);
+      u8g2.print("Bat:");
+      u8g2.print(batteryVoltage); // Display likelihood as a percentage
+      u8g2.print("%");
       u8g2.sendBuffer(); // Transfer the internal memory to the display
+      u8g2.setFont(u8g2_font_inb16_mf); // Choose a suitable font
       Serial.println("done");
       Serial.println();
       delay(5000); // Wait for 5 seconds before the next iteration
     }
+
   }  
   else {
   }
