@@ -1,5 +1,6 @@
 //https://github.com/arduino/ArduinoTensorFlowLiteTutorials/blob/master/GestureToEmoji/ArduinoSketches/IMU_Classifier/IMU_Classifier.ino
 //https://colab.research.google.com/drive/1wfOuVHbrcoFD7YLNErialoZrMzzZKGtq#scrollTo=3LlwY8B_h8rJ
+
 #include <Arduino.h>
 
 /////////////////////////db/////////////////////////////
@@ -7,8 +8,10 @@
 #include <Wire.h>     // The I2C library
 #include <SparkFun_Qwiic_Scale_NAU7802_Arduino_Library.h>
 NAU7802 nau; // Create an instance of the NAU7802 sensor
+//#include "tlc59208.h"
+//TLC59208 ledctrl;
 #include "PCA9551.h"
-PCA9551 ledDriver = PCA9551(PCA9551_ADDR_1); // Create an instance of the PCA9551 LED driver
+PCA9551 ledDriver(0x60); // Create an instance of the PCA9551 LED driver
 
 /////////////////////////ml/////////////////////////////
 // Include TensorFlow Lite and related libraries
@@ -18,7 +21,7 @@ PCA9551 ledDriver = PCA9551(PCA9551_ADDR_1); // Create an instance of the PCA955
 #include <tensorflow/lite/micro/micro_interpreter.h>
 #include <tensorflow/lite/schema/schema_generated.h>
 // #include <tensorflow/lite/version.h>
-#include "model.h" // Include the machine learning model
+#include "model100samples.h" // Include the machine learning model
 
 // Global variables for TensorFlow Lite (Micro)
 tflite::MicroErrorReporter tflErrorReporter;
@@ -31,11 +34,12 @@ constexpr int tensorArenaSize = 8 * 1024;
 byte tensorArena[tensorArenaSize] __attribute__((aligned(16)));
 
 // Array to map gesture index to a name
+
 const char* PLASTICS[] = {
-  "PS",
-  "PC",
   "PMMA",
   "PET",
+  "PS",
+  "PC",
   "other"
 };
 #define NUM_PLASTICS (sizeof(PLASTICS) / sizeof(PLASTICS[0]))
@@ -43,17 +47,11 @@ const char* PLASTICS[] = {
 ////////////////////////screen//////////////////////
 // Include libraries for the OLED display
 #include <U8g2lib.h>
-#ifdef U8X8_HAVE_HW_SPI
-#include <SPI.h>
-#endif
-#ifdef U8X8_HAVE_HW_I2C
-#include <Wire.h>
-#endif
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
 
 ////////////////////////other//////////////////////
 // Define threshold values for brightness and darkness
-#define TooBright 0.99
+#define TooBright 1.05
 #define TooDark 0.5
 
 float readings[] = {22977, 36106, 52788, 71216, 27235, 35036, 10490, 6381};
@@ -61,7 +59,7 @@ float calibrate_readings[] = {26016, 46824, 82300, 80176, 42096, 53390, 19076, 1
 float normalized[8];
 float snv[8];
 
-const int buttonPin = 8;  // the number of the pushbutton pin
+const int buttonPin = 26;  // the number of the pushbutton pin
 int buttonState = 0;  // variable for reading the pushbutton status
 
 #define VBATPIN A13
@@ -91,7 +89,9 @@ float calculateStdDev(float values[], int size) {
 void scan(){
   Serial.println("Starting scan");
   for (int i=0; i<8; i++) {
-      ledDriver.setLedState(i, LED_ON);
+      //LED DRIVER: For TLC59208 choose the ledctrl, for PCA9551 choose ledDriver////////////////////
+      //ledctrl.on(i);
+      ledDriver.digitalWrite(i, LOW); // turns it on      
       delay(10);
 
       // Skip the first 10 readings
@@ -102,7 +102,9 @@ void scan(){
       // Read sensor value
       while (! nau.available()) delay(1);
       readings[i] = nau.getAverage(15);
-      ledDriver.setLedState(i, LED_OFF);
+      //LED DRIVER: For TLC59208 choose the ledctrl, for PCA9551 choose ledDriver////////////////////
+      //ledctrl.off(i);
+      ledDriver.digitalWrite(i, HIGH); //turns it off
   }
 
   // Print the sensor readings
@@ -118,7 +120,10 @@ void calibrate_scan() {
   Serial.println("Start calibration");
   // Loop through each sensor
   for (int i = 0; i < 8; i++) {
-    ledDriver.setLedState(i, LED_ON); // Turn on the LED for this sensor
+      //LED DRIVER: For TLC59208 choose the ledctrl, for PCA9551 choose ledDriver////////////////////
+      //Serial.println("turning on LED: " + String(i)); 
+      //ledctrl.on(i);
+      ledDriver.digitalWrite(i, LOW); // turns it on
     delay(10);
 
     // Skip the first 10 readings to allow the sensor to stabilize
@@ -130,7 +135,9 @@ void calibrate_scan() {
     // Read sensor value (ADC)
     while (!nau.available()) delay(1); // Wait for a reading to be available
     calibrate_readings[i] = nau.getAverage(15); // Store the calibrated reading
-    ledDriver.setLedState(i, LED_OFF); // Turn off the LED for this sensor
+      //LED DRIVER: For TLC59208 choose the ledctrl, for PCA9551 choose ledDriver////////////////////
+      //ledctrl.off(i);
+      ledDriver.digitalWrite(i, HIGH); //turns it off
   }
 
   // Print the calibrated readings
@@ -145,10 +152,26 @@ void setup() {
   Serial.begin(9600); // Initialize the serial communication
   while (!Serial); // Wait for Serial to be ready
   pinMode(buttonPin, INPUT_PULLUP);
+  pinMode(NEOPIXEL_I2C_POWER, OUTPUT);
+  digitalWrite(NEOPIXEL_I2C_POWER, HIGH);
+  //delay(2000);
 
   /////////////////////////db/////////////////////////////
   Wire.begin(); // Initialize I2C communication
   Wire.setClock(400000); // Set I2C clock speed to 400kHz
+
+
+  Serial.println("Starting calibration in 3 seconds");
+  u8g2.setI2CAddress(0x7A);  
+  u8g2.begin();
+  //u8g2.setI2CAddress(0x3d);  
+  u8g2.clearBuffer(); // Clear the internal memory of the display
+  u8g2.setFont(u8g2_font_inb16_mf); // Choose a suitable font
+  u8g2.drawStr(0, 16, "Press to"); // Display "Scan" on the screen
+  u8g2.drawStr(0, 36, "Calibrate"); // Display "Scan" on the screen
+  u8g2.sendBuffer(); // Transfer internal memory to the display
+
+
 
   if (!nau.begin()) {
     Serial.println("Failed to find NAU7802");
@@ -160,8 +183,8 @@ void setup() {
     nau.getReading(); // Discard the reading
   }
 
-  nau.setLDO(3.3); // Set the Low-Dropout Regulator voltage to 3.3V
-  nau.setGain(NAU7802_GAIN_128); // Set the sensor gain to 128
+  nau.setLDO(1.8); // Set the Low-Dropout Regulator voltage to 3.3V
+  nau.setGain(NAU7802_GAIN_2); // Set the sensor gain to 128
   nau.setSampleRate(NAU7802_SPS_320); // Increase the sample rate to the maximum
   nau.calibrateAFE(); // Recalibrate the analog front end when settings are changed
 
@@ -186,13 +209,7 @@ void setup() {
 
   /////////////////////////screen/////////////////////////////
 
-  Serial.println("Starting calibration in 3 seconds");
-  u8g2.begin();
-  u8g2.clearBuffer(); // Clear the internal memory of the display
-  u8g2.setFont(u8g2_font_inb16_mf); // Choose a suitable font
-  u8g2.drawStr(0, 16, "Press to"); // Display "Scan" on the screen
-  u8g2.drawStr(0, 36, "Calibrate"); // Display "Scan" on the screen
-  u8g2.sendBuffer(); // Transfer internal memory to the display
+
   while (digitalRead(buttonPin) == HIGH) {
     // wait for button press
   }
@@ -242,6 +259,8 @@ void loop() {
       // Apply SNV (Standard Normal Variate) transformation
       for (int i = 0; i < 8; i++) {
         snv[i] = (normalized[i] - mean) / std;
+        //snv[i] = snv[i] * 1000000; // Scale the SNV values to 0-1000 to get more resolution
+
       }
 
       ////// Run TensorFlow inference
