@@ -21,7 +21,7 @@ PCA9551 ledDriver(0x60); // Create an instance of the PCA9551 LED driver
 #include <tensorflow/lite/micro/micro_interpreter.h>
 #include <tensorflow/lite/schema/schema_generated.h>
 // #include <tensorflow/lite/version.h>
-#include "model (9).h" // Include the machine learning model
+#include "model (12).h" // Include the machine learning model
 
 // Global variables for TensorFlow Lite (Micro)
 tflite::MicroErrorReporter tflErrorReporter;
@@ -35,11 +35,11 @@ byte tensorArena[tensorArenaSize] __attribute__((aligned(16)));
 
 // Array to map plastic index to a name
 const char *PLASTICS[] = {
-    "other",
-    "PMMA",
+    "PC",
     "PET",
-    "PS",
-    "PC"};
+    "PMMA",
+    "other",
+    "PS"};
 #define NUM_PLASTICS (sizeof(PLASTICS) / sizeof(PLASTICS[0]))
 
 ////////////////////////screen//////////////////////
