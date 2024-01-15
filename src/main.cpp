@@ -21,7 +21,7 @@ PCA9551 ledDriver(0x60); // Create an instance of the PCA9551 LED driver
 #include <tensorflow/lite/micro/micro_interpreter.h>
 #include <tensorflow/lite/schema/schema_generated.h>
 // #include <tensorflow/lite/version.h>
-#include "model (9).h" // Include the machine learning model
+#include "model (14).h" // Include the machine learning model
 
 // Global variables for TensorFlow Lite (Micro)
 tflite::MicroErrorReporter tflErrorReporter;
@@ -35,11 +35,12 @@ byte tensorArena[tensorArenaSize] __attribute__((aligned(16)));
 
 // Array to map plastic index to a name
 const char *PLASTICS[] = {
-    "other",
-    "PMMA",
+    "PC",
     "PET",
+    "PMMA",
+    "Other",
     "PS",
-    "PC"};
+    "Nothing"};
 #define NUM_PLASTICS (sizeof(PLASTICS) / sizeof(PLASTICS[0]))
 
 ////////////////////////screen//////////////////////
@@ -51,7 +52,7 @@ U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/U8X8_PIN_NONE);
 // Define threshold values for brightness and darkness
 #define TooBright 1.50
 #define TooDark 0.5
-
+#define NoDifference 0.95
 // sensor readings
 float readings[] = {1116508.0, 1540233.0, 14747.0, 14787.0, 14942.0, 15038.0, 14959.0, 14609.0};
 float calibrate_readings[] = {1118173.0, 1561292.0, 10868.0, 10924.0, 10904.0, 10878.0, 10923.0, 10916.0};
@@ -61,7 +62,10 @@ float snv[8];
 // Button configuration
 const int buttonPin = 26; // the number of the pushbutton pin
 int buttonState = 0;      // variable for reading the pushbutton status
-
+bool isScanning = false;  // Variable to keep track of scanning state
+int lastLikelihoodIndex = -1;
+int consecutiveCount = 0;
+bool update = false;
 // Battery voltage pin
 #define VBATPIN A13
 
@@ -100,7 +104,7 @@ void scan()
     delay(10);
 
     // Skip the first 10 readings
-    for (uint8_t j = 0; j < 15; j++)
+    for (uint8_t j = 0; j < 10; j++)
     {
       while (!nau.available())
         delay(1);
@@ -109,7 +113,7 @@ void scan()
     // Read sensor value
     while (!nau.available())
       delay(1);
-    readings[i] = nau.getAverage(15);
+    readings[i] = nau.getAverage(10);
     // LED DRIVER: For TLC59208 choose the ledctrl, for PCA9551 choose ledDriver////////////////////
     // ledctrl.off(i);
     ledDriver.digitalWrite(i, HIGH); // turns it off
@@ -258,22 +262,33 @@ void setup()
   u8g2.setFont(u8g2_font_inb16_mf); // Choose a suitable font
   u8g2.drawStr(0, 16, "Press to");  // Display "Scan" on the screen
   u8g2.drawStr(0, 36, "Scan");      // Display "Scan" on the screen
-  int measuredvbat = analogReadMilliVolts(VBATPIN);
-  int batteryVoltage = map(measuredvbat, 1500, 2100, 0, 100); // Map the voltage to a percentage (0-100%)
-  u8g2.setCursor(70, 60);
-  u8g2.setFont(u8g2_font_scrum_te);
-  u8g2.print("Bat:");
-  u8g2.print(batteryVoltage); // Display likelihood as a percentage
-  u8g2.print("%");
   u8g2.sendBuffer(); // Transfer the internal memory to the display
 }
 
 void loop()
 {
+  int currentButtonState = digitalRead(buttonPin);
+
+  // Check if button state has changed
+  if (currentButtonState != buttonState)
+  {
+    delay(50);                                   // Simple debounce
+    currentButtonState = digitalRead(buttonPin); // Read the button state again
+    if (currentButtonState != buttonState)
+    {
+      buttonState = currentButtonState; // Update the button state
+
+      // If the new button state is HIGH, then the button was just pressed
+      if (buttonState == LOW)
+      {
+        isScanning = !isScanning; // Toggle the scanning state
+      }
+    }
+  }
   // Wait for input to start the scan
   // check if the pushbutton is pressed. If it is, the buttonState is HIGH:
 
-  if (digitalRead(buttonPin) == LOW)
+  if (isScanning)
   {
     /////////////////////////screen/////////////////////////////
     Serial.println("Start SCAN");
@@ -284,23 +299,22 @@ void loop()
     {
       normalized[i] = (float)readings[i] / (float)calibrate_readings[i];
     }
-
+    u8g2.clearBuffer(); // Clear the internal memory of the display
     // Check quality of the sample
     if (normalized[0] > TooBright)
     {
       Serial.println("Sample too bright");
-      u8g2.clearBuffer();               // Clear the internal memory of the display
       u8g2.drawStr(0, 16, "Incorrect"); // Display "Too Bright" on the screen
-      u8g2.sendBuffer();                // Transfer internal memory to the display
-      delay(2000);                      // Wait for 2 seconds
     }
     else if (normalized[0] < TooDark)
     {
       Serial.println("Sample too dark");
-      u8g2.clearBuffer();              // Clear the internal memory of the display
       u8g2.drawStr(0, 16, "Too Dark"); // Display "Too Dark" on the screen
-      u8g2.sendBuffer();               // Transfer internal memory to the display
-      delay(2000);                     // Wait for 2 seconds
+    }
+    else if (normalized[7] > NoDifference)
+    {
+      Serial.println("No Sample");
+      u8g2.drawStr(0, 16, "No Sample"); // Display "Too Bright" on the screen
     }
     else
     {
@@ -332,14 +346,13 @@ void loop()
       ////// Output the results
       float maxLikelihood = -1.0; // Initialize with a negative value
       int maxLikelihoodIndex = -1;
-      u8g2.clearBuffer(); // Clear the internal memory of the display
-      u8g2.setFont(u8g2_font_inb16_mf); // Choose a suitable font
+
       // Loop through plastic types
       for (int i = 0; i < NUM_PLASTICS; i++)
       {
         Serial.print(PLASTICS[i]);
         Serial.print(": ");
-        Serial.println(tflOutputTensor->data.f[i], 6); // Print the likelihood with 6 decimal places
+        Serial.println(tflOutputTensor->data.f[i], 3); // Print the likelihood with 6 decimal places
 
         // Check if the current plastic has a higher likelihood
         if (tflOutputTensor->data.f[i] > maxLikelihood)
@@ -351,36 +364,77 @@ void loop()
 
       if (maxLikelihoodIndex != -1)
       {
-        // Print the most likely plastic type
-        Serial.print("Most likely plastic: ");
-        Serial.println(PLASTICS[maxLikelihoodIndex]);
+        // If the most likely plastic is the same as the last one
+        if (maxLikelihoodIndex == lastLikelihoodIndex)
+        {
+          // Increase the consecutive count
+          consecutiveCount++;
+        }
+        else
+        {
+          // Reset the consecutive count and update the last likelihood index
+          consecutiveCount = 0;
+          lastLikelihoodIndex = maxLikelihoodIndex;
+          Serial.println("Thinking");
+          u8g2.drawStr(0, 16, "Thinking"); // Display "Too Dark" on the screen
+        }
 
-        // Display the most likely plastic type and its likelihood on the screen
-        u8g2.drawStr(0, 32, PLASTICS[maxLikelihoodIndex]);
-        u8g2.setCursor(72, 32);
-        u8g2.print(int(tflOutputTensor->data.f[maxLikelihoodIndex] * 100)); // Display likelihood as a percentage
-        u8g2.print("%");
+        // If the most likely plastic has been detected twice in a row
+        if (consecutiveCount >= 2)
+        {
+          if (maxLikelihood < 0.6)
+          {
+            // Print the most likely plastic type
+            Serial.print("maybe it is: ");
+            Serial.println(PLASTICS[maxLikelihoodIndex]);
+
+            u8g2.drawStr(0, 16, "Thinking"); // Display "Too Dark" on the screen
+          }
+          else
+          {
+            // Print the most likely plastic type
+            Serial.print("Most likely plastic: ");
+            Serial.println(PLASTICS[maxLikelihoodIndex]);
+
+            // Display the most likely plastic type and its likelihood on the screen
+            u8g2.drawStr(0, 32, PLASTICS[maxLikelihoodIndex]);
+            u8g2.setCursor(72, 32);
+            u8g2.print(int(tflOutputTensor->data.f[maxLikelihoodIndex] * 100)); // Display likelihood as a percentage
+            u8g2.print("%");
+          }
+        }
       }
-      u8g2.sendBuffer(); // Transfer the internal memory to the display
 
-      Serial.println("done");
-      Serial.println();
-      delay(4000);                      // Wait for 5 seconds before the next iteration
-      u8g2.clearBuffer();               // Clear the internal memory of the display
-      u8g2.setFont(u8g2_font_inb16_mf); // Choose a suitable font
-      u8g2.drawStr(0, 16, "Press to");  // Display "Scan" on the screen
-      u8g2.drawStr(0, 36, "Scan");      // Display "Scan" on the screen
-      int measuredvbat = analogReadMilliVolts(VBATPIN);
-      int batteryVoltage = map(measuredvbat, 1500, 2100, 0, 100); // Map the voltage to a percentage (0-100%)
-      u8g2.setCursor(70, 60);
-      u8g2.setFont(u8g2_font_scrum_te);
-      u8g2.print("Bat:");
-      u8g2.print(batteryVoltage); // Display likelihood as a percentage
-      u8g2.print("%");
-      u8g2.sendBuffer(); // Transfer the internal memory to the display
+      // delay(500);                      // Wait for 5 seconds before the next iteration
+      //  u8g2.clearBuffer();               // Clear the internal memory of the display
+      //  u8g2.setFont(u8g2_font_inb16_mf); // Choose a suitable font
+      //  u8g2.drawStr(0, 16, "Press to");  // Display "Scan" on the screen
+      //  u8g2.drawStr(0, 36, "Scan");      // Display "Scan" on the screen
+      //  u8g2.sendBuffer(); // Transfer the internal memory to the display
     }
+    int measuredvbat = analogReadMilliVolts(VBATPIN);
+    int batteryVoltage = map(measuredvbat, 1500, 2100, 0, 100); // Map the voltage to a percentage (0-100%)
+    u8g2.setCursor(70, 60);
+    u8g2.setFont(u8g2_font_scrum_te);
+    u8g2.print("Bat:");
+    u8g2.print(batteryVoltage); // Display likelihood as a percentage
+    u8g2.print("%");
+    u8g2.setCursor(-2, 56);
+    if (update) {
+      u8g2.print(".");
+    }
+    update = !update;
+    u8g2.setFont(u8g2_font_inb16_mf);
+    u8g2.sendBuffer(); // Transfer the internal memory to the display
+
+    Serial.println("done");
+    Serial.println();
   }
   else
   {
+  u8g2.clearBuffer();               // Clear the internal memory of the display
+  u8g2.drawStr(0, 16, "Press to");  // Display "Scan" on the screen
+  u8g2.drawStr(0, 36, "Scan");      // Display "Scan" on the screen
+  u8g2.sendBuffer(); // Transfer the internal memory to the display
   }
 }
