@@ -57,7 +57,7 @@ float readings[] = {1116508.0, 1540233.0, 14747.0, 14787.0, 14942.0, 15038.0, 14
 float calibrate_readings[] = {1118173.0, 1561292.0, 10868.0, 10924.0, 10904.0, 10878.0, 10923.0, 10916.0};
 float normalized[8];
 float snv[8];
-
+float background[2];
 // Button configuration
 const int buttonPin = 26; // the number of the pushbutton pin
 int buttonState = 0;      // variable for reading the pushbutton status
@@ -95,6 +95,20 @@ float calculateStdDev(float values[], int size)
 void scan()
 {
   Serial.println("Starting scan");
+  //////PRE Scan
+// Skip the first 10 readings
+    for (uint8_t j = 0; j < 10; j++)
+    {
+      while (!nau.available())
+        delay(1);
+      nau.getReading();
+    }
+    // Read sensor value
+    while (!nau.available())
+      delay(1);
+    background[0] = nau.getAverage(10);
+
+  //// Actual Scan
   for (int i = 0; i < 8; i++)
   {
     // LED DRIVER: For TLC59208 choose the ledctrl, for PCA9551 choose ledDriver////////////////////
@@ -118,11 +132,24 @@ void scan()
     ledDriver.digitalWrite(i, HIGH); // turns it off
   }
 
-  // Print the sensor readings
+  //////POST Scan
+// Skip the first 10 readings
+    for (uint8_t j = 0; j < 10; j++)
+    {
+      while (!nau.available())
+        delay(1);
+      nau.getReading();
+    }
+    // Read sensor value
+    while (!nau.available())
+      delay(1);
+    background[1] = nau.getAverage(10);
+  
   for (int i = 0; i < 8; i++)
   {
-    Serial.print(readings[i], 1);
+    Serial.print(readings[i], 1); // Print the sensor readings
     Serial.print('\t');
+    readings[i] = readings[i] - ((background[0]+background[1])/2);
   }
   Serial.println();
 }
@@ -130,40 +157,64 @@ void scan()
 // Function to perform calibration scan
 void calibrate_scan()
 {
-  Serial.println("Start calibration");
-  // Loop through each sensor
+  Serial.println("Starting scan");
+  //////PRE Scan
+// Skip the first 10 readings
+    for (uint8_t j = 0; j < 10; j++)
+    {
+      while (!nau.available())
+        delay(1);
+      nau.getReading();
+    }
+    // Read sensor value
+    while (!nau.available())
+      delay(1);
+    background[0] = nau.getAverage(10);
+
+  //// Actual Scan
   for (int i = 0; i < 8; i++)
   {
     // LED DRIVER: For TLC59208 choose the ledctrl, for PCA9551 choose ledDriver////////////////////
-    // Serial.println("turning on LED: " + String(i));
     // ledctrl.on(i);
     ledDriver.digitalWrite(i, LOW); // turns it on
     delay(10);
 
-    // Skip the first 10 readings to allow the sensor to stabilize
-    for (uint8_t j = 0; j < 15; j++)
+    // Skip the first 10 readings
+    for (uint8_t j = 0; j < 10; j++)
     {
       while (!nau.available())
-        delay(1);       // Wait for a reading to be available
-      nau.getReading(); // Discard the reading
+        delay(1);
+      nau.getReading();
     }
-
-    // Read sensor value (ADC)
+    // Read sensor value
     while (!nau.available())
-      delay(1);                                 // Wait for a reading to be available
-    calibrate_readings[i] = nau.getAverage(15); // Store the calibrated reading
+      delay(1);
+    calibrate_readings[i] = nau.getAverage(10);
     // LED DRIVER: For TLC59208 choose the ledctrl, for PCA9551 choose ledDriver////////////////////
     // ledctrl.off(i);
     ledDriver.digitalWrite(i, HIGH); // turns it off
   }
 
-  // Print the calibrated readings
+  //////POST Scan
+// Skip the first 10 readings
+    for (uint8_t j = 0; j < 10; j++)
+    {
+      while (!nau.available())
+        delay(1);
+      nau.getReading();
+    }
+    // Read sensor value
+    while (!nau.available())
+      delay(1);
+    background[1] = nau.getAverage(10);
+  
   for (int i = 0; i < 8; i++)
   {
-    Serial.print(calibrate_readings[i], 1); // Print the reading with 1 decimal place
-    Serial.print('\t');                     // Print a tab character to separate readings
+    Serial.print(readings[i], 1); // Print the sensor readings
+    Serial.print('\t');
+    readings[i] = readings[i] - ((background[0]+background[1])/2);
   }
-  Serial.println(); // Move to the next line in the Serial monitor
+  Serial.println();
 }
 
 void setup()
