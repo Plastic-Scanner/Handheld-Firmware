@@ -21,7 +21,7 @@ PCA9551 ledDriver(0x60); // Create an instance of the PCA9551 LED driver
 #include <tensorflow/lite/micro/micro_interpreter.h>
 #include <tensorflow/lite/schema/schema_generated.h>
 // #include <tensorflow/lite/version.h>
-#include "model (14).h" // Include the machine learning model
+#include "model (16)proto4.h" // Include the machine learning model
 
 // Global variables for TensorFlow Lite (Micro)
 tflite::MicroErrorReporter tflErrorReporter;
@@ -35,12 +35,11 @@ byte tensorArena[tensorArenaSize] __attribute__((aligned(16)));
 
 // Array to map plastic index to a name
 const char *PLASTICS[] = {
-    "PC",
     "PET",
     "PMMA",
-    "Other",
+    "PC",
     "PS",
-    "Nothing"};
+    "Other"};
 #define NUM_PLASTICS (sizeof(PLASTICS) / sizeof(PLASTICS[0]))
 
 ////////////////////////screen//////////////////////
@@ -180,14 +179,19 @@ void setup()
   Wire.begin();          // Initialize I2C communication
   Wire.setClock(400000); // Set I2C clock speed to 400kHz
 
+  /////////////////////////screen/////////////////////////////
+  
+  u8g2.setI2CAddress(0x7A);
+  u8g2.begin();
   /////////////////////////ADC/////////////////////////////
   if (!nau.begin())
   {
     Serial.println("Failed to find NAU7802");
-    u8g2.setCursor(0, 60);
-    u8g2.setFont(u8g2_font_scrum_te);
-    u8g2.print("No NAU7802");
-    u8g2.sendBuffer(); // Transfer the internal memory to the display
+    u8g2.clearBuffer();               // Clear the internal memory of the display
+    u8g2.setFont(u8g2_font_inb16_mf); // Choose a suitable font
+    u8g2.drawStr(0, 16, "no ");  // Display "Scan" on the screen
+    u8g2.drawStr(0, 36, "NAU7802"); // Display "Scan" on the screen
+    u8g2.sendBuffer();
   }
 
   // Take 10 readings to flush out initial readings
@@ -206,10 +210,11 @@ void setup()
   if (ledDriver.begin() == false)
   {
     Serial.println("Could not connect.");
-    u8g2.setCursor(0, 50);
-    u8g2.setFont(u8g2_font_scrum_te);
-    u8g2.print("No LED Driver");
-    u8g2.sendBuffer(); // Transfer the internal memory to the display
+    u8g2.clearBuffer();               // Clear the internal memory of the display
+    u8g2.setFont(u8g2_font_inb16_mf); // Choose a suitable font
+    u8g2.drawStr(0, 16, "no LED");  // Display "Scan" on the screen
+    u8g2.drawStr(0, 36, "driver"); // Display "Scan" on the screen
+    u8g2.sendBuffer(); 
     while (1)
       ;
   }
@@ -224,10 +229,11 @@ void setup()
   if (tflModel->version() != TFLITE_SCHEMA_VERSION)
   {
     Serial.println("Model schema mismatch!");
-    u8g2.setCursor(0, 40);
-    u8g2.setFont(u8g2_font_scrum_te);
-    u8g2.print("Model mismatch");
-    u8g2.sendBuffer(); // Transfer the internal memory to the display
+    u8g2.clearBuffer();               // Clear the internal memory of the display
+    u8g2.setFont(u8g2_font_inb16_mf); // Choose a suitable font
+    u8g2.drawStr(0, 16, "model");  // Display "Scan" on the screen
+    u8g2.drawStr(0, 36, "mismatch"); // Display "Scan" on the screen
+    u8g2.sendBuffer();                // Transfer internal memory to the display
     while (1)
       ;
   }
@@ -239,10 +245,7 @@ void setup()
   tflInputTensor = tflInterpreter->input(0);
   tflOutputTensor = tflInterpreter->output(0);
 
-  /////////////////////////screen/////////////////////////////
   Serial.println("wait for button press");
-  u8g2.setI2CAddress(0x7A);
-  u8g2.begin();
   u8g2.clearBuffer();               // Clear the internal memory of the display
   u8g2.setFont(u8g2_font_inb16_mf); // Choose a suitable font
   u8g2.drawStr(0, 16, "Press to");  // Display "Scan" on the screen
