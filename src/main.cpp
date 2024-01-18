@@ -93,13 +93,11 @@ float calculateStdDev(float values[], int size)
   return sqrt(sum / (size - 1));
 }
 
-// Function to perform sensor scan
-void scan()
+// Function to skip the first "Count" readings and read the same "Count" average of the sensor value
+float readSensorValue(uint8_t Count)
 {
-  Serial.println("Starting scan");
-  //////PRE Scan
-  // Skip the first 10 readings
-  for (uint8_t j = 0; j < 10; j++)
+  // Skip the first skipCount readings
+  for (uint8_t j = 0; j < Count; j++)
   {
     while (!nau.available())
       delay(1);
@@ -108,72 +106,18 @@ void scan()
   // Read sensor value
   while (!nau.available())
     delay(1);
-  background[0] = nau.getAverage(10);
-
-  //// Actual Scan
-  for (int i = 0; i < 8; i++)
-  {
-    // LED DRIVER: For TLC59208 choose the ledctrl, for PCA9551 choose ledDriver////////////////////
-    // ledctrl.on(i);
-    ledDriver.digitalWrite(i, LOW); // turns it on
-    delay(10);
-
-    // Skip the first 10 readings
-    for (uint8_t j = 0; j < 10; j++)
-    {
-      while (!nau.available())
-        delay(1);
-      nau.getReading();
-    }
-    // Read sensor value
-    while (!nau.available())
-      delay(1);
-    readings[i] = nau.getAverage(10);
-    // LED DRIVER: For TLC59208 choose the ledctrl, for PCA9551 choose ledDriver////////////////////
-    // ledctrl.off(i);
-    ledDriver.digitalWrite(i, HIGH); // turns it off
-  }
-
-  //////POST Scan
-  // Skip the first 10 readings
-  for (uint8_t j = 0; j < 10; j++)
-  {
-    while (!nau.available())
-      delay(1);
-    nau.getReading();
-  }
-  // Read sensor value
-  while (!nau.available())
-    delay(1);
-  background[1] = nau.getAverage(10);
-
-  for (int i = 0; i < 8; i++)
-  {
-    Serial.print(readings[i], 1); // Print the sensor readings
-    Serial.print('\t');
-    readings[i] = readings[i] - ((background[0] + background[1]) / 2);
-  }
-  Serial.println();
+  return nau.getAverage(Count);
 }
 
-// Function to perform calibration scan
-void calibrate_scan()
+// Function to perform sensor scan
+void performScan(bool isCalibration)
 {
   Serial.println("Starting scan");
-  //////PRE Scan
-  // Skip the first 10 readings
-  for (uint8_t j = 0; j < 10; j++)
-  {
-    while (!nau.available())
-      delay(1);
-    nau.getReading();
-  }
-  // Read sensor value
-  while (!nau.available())
-    delay(1);
-  background[0] = nau.getAverage(10);
 
-  //// Actual Scan
+  // Pre Scan
+  background[0] = readSensorValue(10);
+
+  // Actual Scan
   for (int i = 0; i < 8; i++)
   {
     // LED DRIVER: For TLC59208 choose the ledctrl, for PCA9551 choose ledDriver////////////////////
@@ -181,40 +125,38 @@ void calibrate_scan()
     ledDriver.digitalWrite(i, LOW); // turns it on
     delay(10);
 
-    // Skip the first 10 readings
-    for (uint8_t j = 0; j < 10; j++)
+    float sensorValue = readSensorValue(10);
+
+    if (isCalibration)
     {
-      while (!nau.available())
-        delay(1);
-      nau.getReading();
+      calibrate_readings[i] = sensorValue;
     }
-    // Read sensor value
-    while (!nau.available())
-      delay(1);
-    calibrate_readings[i] = nau.getAverage(10);
-    // LED DRIVER: For TLC59208 choose the ledctrl, for PCA9551 choose ledDriver////////////////////
-    // ledctrl.off(i);
+    else
+    {
+      readings[i] = sensorValue;
+    }
+
     ledDriver.digitalWrite(i, HIGH); // turns it off
   }
 
-  //////POST Scan
-  // Skip the first 10 readings
-  for (uint8_t j = 0; j < 10; j++)
-  {
-    while (!nau.available())
-      delay(1);
-    nau.getReading();
-  }
-  // Read sensor value
-  while (!nau.available())
-    delay(1);
-  background[1] = nau.getAverage(10);
+  // Post Scan
+  background[1] = readSensorValue(10);
+
+  float backgroundAverage = (background[0] + background[1]) / 2;
 
   for (int i = 0; i < 8; i++)
   {
     Serial.print(readings[i], 1); // Print the sensor readings
     Serial.print('\t');
-    readings[i] = readings[i] - ((background[0] + background[1]) / 2);
+
+    if (isCalibration)
+    {
+      calibrate_readings[i] -= backgroundAverage;
+    }
+    else
+    {
+      readings[i] -= backgroundAverage;
+    }
   }
   Serial.println();
 }
@@ -398,7 +340,7 @@ void setup()
   unsigned long releaseTime = millis();
   unsigned long holdTime = releaseTime - pressTime;
   Serial.println(holdTime);
-  calibrate_scan();
+  performScan(true);
   if (holdTime < shortPressTime)
   {
     // Short press
@@ -436,7 +378,7 @@ void loop()
     {
       /////////////////////////screen/////////////////////////////
       Serial.println("Start SCAN in 3 seconds");
-      scan();
+      performScan(false);
       /////// preprocess data
       // Normalize
       for (int i = 0; i < 8; i++)
@@ -517,7 +459,7 @@ void loop()
     {
       /////////////////////////screen/////////////////////////////
       Serial.println("Start SCAN");
-      scan();
+      performScan(false);
       /////// preprocess data
       // Normalize
       for (int i = 0; i < 8; i++)
