@@ -21,8 +21,8 @@ PCA9551 ledDriver(0x60); // Create an instance of the PCA9551 LED driver
 #include <tensorflow/lite/micro/micro_interpreter.h>
 #include <tensorflow/lite/schema/schema_generated.h>
 // #include <tensorflow/lite/version.h>
-#include "model (16)proto4.h" // Include the machine learning model
-
+#include "model (18)proto4.h" // Include the machine learning model
+#include "secrets.h" // Include the machine learning model
 // Global variables for TensorFlow Lite (Micro)
 tflite::MicroErrorReporter tflErrorReporter;
 tflite::AllOpsResolver tflOpsResolver;
