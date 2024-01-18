@@ -629,13 +629,6 @@ void loop()
             }
           }
         }
-
-        // delay(500);                      // Wait for 5 seconds before the next iteration
-        //  u8g2.clearBuffer();               // Clear the internal memory of the display
-        //  u8g2.setFont(u8g2_font_inb16_mf); // Choose a suitable font
-        //  u8g2.drawStr(0, 16, "Press to");  // Display "Scan" on the screen
-        //  u8g2.drawStr(0, 36, "Scan");      // Display "Scan" on the screen
-        //  u8g2.sendBuffer(); // Transfer the internal memory to the display
       }
       int measuredvbat = analogReadMilliVolts(VBATPIN);
       int batteryVoltage = map(measuredvbat, 1500, 2100, 0, 100); // Map the voltage to a percentage (0-100%)
