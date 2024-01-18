@@ -23,3 +23,6 @@ How to use wokwi:
 
 ## Interactive Python Notebook
 The interactive python notebook is a great way to test the classifier and see how it works. It is also a great way to test the classifier on your own data. you can run it by yourself, or use the [Google Colab](https://colab.researh.google.com) version. The link is here: https://colab.research.google.com/drive/1wfOuVHbrcoFD7YLNErialoZrMzzZKGtq#scrollTo=3LlwY8B_h8rJ
+
+## Collect scans for training
+To activate the collection mode, in setup when the screen prompts to "press to calibrate" hold the button for 1 second or more, this will enter the ScanCollect part of the sketch that connects the device to the internet and make an IFTTT request to start the collection. You need to setup IFTTT (you can follow [this guide](https://randomnerdtutorials.com/esp32-esp8266-publish-sensor-readings-to-google-sheets/)) and your need to add your details to your own secrets.h file.
