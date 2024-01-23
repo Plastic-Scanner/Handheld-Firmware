@@ -69,6 +69,7 @@ bool isScanning = false;  // Variable to keep track of scanning state
 int lastLikelihoodIndex = -1;
 int consecutiveCount = 0;
 bool update = false;
+bool sample = false;
 // Battery voltage pin
 #define VBATPIN A13
 const unsigned long shortPressTime = 1000; // 2000 milliseconds = 2 seconds
@@ -164,6 +165,59 @@ void performScan(bool isCalibration)
   Serial.println();
 }
 
+bool preprocess()
+{
+  // Normalize
+  for (int i = 0; i < 8; i++)
+  {
+    normalized[i] = (float)readings[i] / (float)calibrate_readings[i];
+    normalized[i] = normalized[i] * scaler; // Scale the normalized values to 0-1000 to get more resolution
+  }
+  u8g2.clearBuffer(); // Clear the internal memory of the display
+
+  // Check quality of the sample
+  if (normalized[0] > (TooBright * scaler))
+  {
+    Serial.println("Sample too bright");
+    u8g2.drawStr(0, 16, "Incorrect"); // Display "Too Bright" on the screen
+    return false;
+  }
+  else if (normalized[0] < (TooDark * scaler))
+  {
+    Serial.println("Sample too dark");
+    u8g2.drawStr(0, 16, "Too Dark"); // Display "Too Dark" on the screen
+    return false;
+
+  }
+  else if (normalized[7] > NoDifference)
+  {
+    Serial.println("No Sample");
+    u8g2.drawStr(0, 16, "No Sample"); // Display "Too Bright" on the screen
+    return false;
+  }
+  else
+  {
+    // SNV transform
+    float mean = calculateMean(normalized, 8);  // Calculate the mean of normalized values
+    float std = calculateStdDev(normalized, 8); // Calculate the standard deviation of normalized values
+
+    // Apply SNV (Standard Normal Variate) transformation
+    for (int i = 0; i < 8; i++)
+    {
+      snv[i] = (normalized[i] - mean) / std;
+      snv[i] = snv[i] * scaler; // Scale the SNV values to 0-1000 to get more resolution
+    }
+    ///////////upload new scan//////////
+    // scale from +2.5 and -2.5
+    for (int i = 0; i < 8; i++)
+    {
+      snvScaled[i] = (snv[i] - minSNV) / (maxSNV - minSNV);
+      snvScaled[i] = snvScaled[i] * scaler; // Scale the SNV values to 0-1000 to get more resolution
+    }
+    return true;
+  }
+}
+
 void initWifi()
 {
   Serial.print("Connecting to: ");
@@ -211,10 +265,7 @@ void makeIFTTTRequest()
   Serial.println(resource);
 
   // Temperature in Celsius
-  String jsonObject = String("{\"value1\":\"") + readings[0] + ";" + readings[1] + ";" + readings[2] + ";" + readings[3] + ";" + readings[4] + ";" + readings[5] + ";" + readings[6] + ";" + readings[7] + ";" 
-                                               + normalized[0] + ";" + normalized[1] + ";" + normalized[2] + ";" + normalized[3] + ";" + normalized[4] + ";" + normalized[5] + ";" + normalized[6] + ";" + normalized[7] + ";" 
-                                               + snv[0] + ";" + snv[1] + ";" + snv[2] + ";" + snv[3] + ";" + snv[4] + ";" + snv[5] + ";" + snv[6] + ";" + snv[7] + ";" 
-                                               + snvScaled[0] + ";" + snvScaled[1] + ";" + snvScaled[2] + ";" + snvScaled[3] + ";" + snvScaled[4] + ";" + snvScaled[5] + ";" + snvScaled[6] + ";" + snvScaled[7] +"\"}";
+  String jsonObject = String("{\"value1\":\"") + readings[0] + ";" + readings[1] + ";" + readings[2] + ";" + readings[3] + ";" + readings[4] + ";" + readings[5] + ";" + readings[6] + ";" + readings[7] + ";" + normalized[0] + ";" + normalized[1] + ";" + normalized[2] + ";" + normalized[3] + ";" + normalized[4] + ";" + normalized[5] + ";" + normalized[6] + ";" + normalized[7] + ";" + snv[0] + ";" + snv[1] + ";" + snv[2] + ";" + snv[3] + ";" + snv[4] + ";" + snv[5] + ";" + snv[6] + ";" + snv[7] + ";" + snvScaled[0] + ";" + snvScaled[1] + ";" + snvScaled[2] + ";" + snvScaled[3] + ";" + snvScaled[4] + ";" + snvScaled[5] + ";" + snvScaled[6] + ";" + snvScaled[7] + "\"}";
 
   // Comment the previous line and uncomment the next line to publish temperature readings in Fahrenheit
   /*String jsonObject = String("{\"value1\":\"") + (1.8 * bme.readTemperature() + 32) + "\",\"value2\":\""
@@ -378,74 +429,35 @@ void setup()
 
 void loop()
 {
-  if (scanMode)
+  if (scanMode) // if it is in scan mode it will collect scans from to train model
   {
-    if (digitalRead(buttonPin) == LOW)
+    if (digitalRead(buttonPin) == LOW) // wait for button press
     {
       /////////////////////////screen/////////////////////////////
       Serial.println("Start SCAN in 3 seconds");
       performScan(false);
       /////// preprocess data
-      // Normalize
-      for (int i = 0; i < 8; i++)
+      sample = preprocess();
+      if (sample) // if all is good it will upload the scan
       {
-        normalized[i] = (float)readings[i] / (float)calibrate_readings[i];
-        normalized[i] = normalized[i] * scaler; // Scale the normalized values to 0-1000 to get more resolution
-      }
-
-      // Check quality of the sample
-      if (normalized[0] > (TooBright * scaler))
-      {
-        Serial.println("Sample too bright");
-        u8g2.clearBuffer();               // Clear the internal memory of the display
-        u8g2.drawStr(0, 16, "Incorrect"); // Display "Too Bright" on the screen
-        u8g2.sendBuffer();                // Transfer internal memory to the display
-        delay(2000);                      // Wait for 2 seconds
-      }
-      else if (normalized[0] < (TooDark * scaler))
-      {
-        Serial.println("Sample too dark");
-        u8g2.clearBuffer();              // Clear the internal memory of the display
-        u8g2.drawStr(0, 16, "Too Dark"); // Display "Too Dark" on the screen
-        u8g2.sendBuffer();               // Transfer internal memory to the display
-        delay(2000);                     // Wait for 2 seconds
-      }
-      else
-      {
-        // SNV transform
-        float mean = calculateMean(normalized, 8);  // Calculate the mean of normalized values
-        float std = calculateStdDev(normalized, 8); // Calculate the standard deviation of normalized values
-
-        // Apply SNV (Standard Normal Variate) transformation
-        for (int i = 0; i < 8; i++)
-        {
-          snv[i] = (normalized[i] - mean) / std;
-          snv[i] = snv[i] * scaler; // Scale the SNV values to 0-1000 to get more resolution
-        }
-        ///////////upload new scan//////////
-        // scale from +2.5 and -2.5
-        for (int i = 0; i < 8; i++)
-        {
-          snvScaled[i] = (snv[i] - minSNV) / (maxSNV - minSNV);
-          snvScaled[i] = snvScaled[i] * scaler; // Scale the SNV values to 0-1000 to get more resolution
-        }
         makeIFTTTRequest();
-        u8g2.clearBuffer();               // Clear the internal memory of the display
         u8g2.drawStr(0, 16, "Uploaded!"); // Display "Scan" on the screen
-        // u8g2.drawStr(0, 36, "Scan"); // Display "Scan" on the screen
-        u8g2.sendBuffer();               // Transfer internal memory to the display
-        delay(2000);                     // Wait for 2 seconds
-        u8g2.clearBuffer();              // Clear the internal memory of the display
-        u8g2.drawStr(0, 16, "Press to"); // Display "Scan" on the screen
-        u8g2.drawStr(0, 36, "Scan");     // Display "Scan" on the screen
-        u8g2.sendBuffer();               // Transfer internal memory to the display
       }
+      else // if something is wrong it will end here do nothing and in the next part will display the error
+      {
+      }
+      u8g2.sendBuffer();               // Transfer internal memory to the display
+      delay(2000);                     // Wait for 2 seconds
+      u8g2.clearBuffer();              // Clear the internal memory of the display
+      u8g2.drawStr(0, 16, "Press to"); // Display "Scan" on the screen
+      u8g2.drawStr(0, 36, "Scan");     // Display "Scan" on the screen
+      u8g2.sendBuffer();               // Transfer internal memory to the display
     }
   }
-  else
+  else // this is the interpretation mode, where it scans and inputs the data to the tensorflow model
   {
 
-    int currentButtonState = digitalRead(buttonPin);
+    int currentButtonState = digitalRead(buttonPin); //checks the state of the button, if flips states on the button press
 
     // Check if button state has changed
     if (currentButtonState != buttonState)
@@ -468,54 +480,17 @@ void loop()
 
     if (isScanning)
     {
-      /////////////////////////screen/////////////////////////////
       Serial.println("Start SCAN");
       performScan(false);
       /////// preprocess data
-      // Normalize
-      for (int i = 0; i < 8; i++)
+      sample = preprocess();
+      if (sample) //if all is correct it will run the model
       {
-        normalized[i] = (float)readings[i] / (float)calibrate_readings[i];
-        normalized[i] = normalized[i] * scaler; // Scale the normalized values to 0-1000 to get more resolution
-      }
-      u8g2.clearBuffer(); // Clear the internal memory of the display
-      // Check quality of the sample
-      if (normalized[0] > TooBright)
-      {
-        Serial.println("Sample too bright");
-        u8g2.drawStr(0, 16, "Incorrect"); // Display "Too Bright" on the screen
-      }
-      else if (normalized[0] < TooDark)
-      {
-        Serial.println("Sample too dark");
-        u8g2.drawStr(0, 16, "Too Dark"); // Display "Too Dark" on the screen
-      }
-      else if (normalized[7] > NoDifference)
-      {
-        Serial.println("No Sample");
-        u8g2.drawStr(0, 16, "No Sample"); // Display "Too Bright" on the screen
-      }
-      else
-      {
-        // SNV transform
-        float mean = calculateMean(normalized, 8);  // Calculate the mean of normalized values
-        float std = calculateStdDev(normalized, 8); // Calculate the standard deviation of normalized values
-
-        // Apply SNV (Standard Normal Variate) transformation
-        for (int i = 0; i < 8; i++)
-        {
-          snv[i] = (normalized[i] - mean) / std;
-          snv[i] = snv[i] * scaler; // Scale the SNV values to 0-1000 to get more resolution
-        }
-        ///////////upload new scan//////////
         // scale from +2.5 and -2.5
         for (int i = 0; i < 8; i++)
         {
-          snvScaled[i] = (snv[i] - minSNV) / (maxSNV - minSNV);
-          //snvScaled[i] = snvScaled[i] * scaler; // Scale the SNV values to 0-1000 to get more resolution
+          snvScaled[i] = snvScaled[i] / scaler; // Scale the SNV values to 0-1000 to get more resolution
         }
-
-
         ////// Run TensorFlow inference
         for (int i = 0; i < 8; i++)
         {
@@ -592,6 +567,10 @@ void loop()
           }
         }
       }
+      else //if not good it will end here and display the error in the next part
+      {
+      }
+
       int measuredvbat = analogReadMilliVolts(VBATPIN);
       int batteryVoltage = map(measuredvbat, 1500, 2100, 0, 100); // Map the voltage to a percentage (0-100%)
       u8g2.setCursor(70, 60);
