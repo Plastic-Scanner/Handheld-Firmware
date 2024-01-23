@@ -52,12 +52,16 @@ U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/U8X8_PIN_NONE);
 #define TooBright 1.50
 #define TooDark 0.5
 #define NoDifference 0.95
+float scaler = 1000000;
 // sensor readings
-float readings[] = {1116508.0, 1540233.0, 14747.0, 14787.0, 14942.0, 15038.0, 14959.0, 14609.0};
-float calibrate_readings[] = {1118173.0, 1561292.0, 10868.0, 10924.0, 10904.0, 10878.0, 10923.0, 10916.0};
+float readings[8];
+float calibrate_readings[8];
 float normalized[8];
 float snv[8];
 float background[2];
+float snvScaled[8];
+float minSNV = -2.5;
+float maxSNV = 2.5;
 // Button configuration
 const int buttonPin = 26; // the number of the pushbutton pin
 int buttonState = 0;      // variable for reading the pushbutton status
@@ -113,7 +117,6 @@ float readSensorValue(uint8_t Count)
 void performScan(bool isCalibration)
 {
   Serial.println("Starting scan");
-
   // Pre Scan
   background[0] = readSensorValue(10);
 
@@ -146,17 +149,17 @@ void performScan(bool isCalibration)
 
   for (int i = 0; i < 8; i++)
   {
-    Serial.print(readings[i], 1); // Print the sensor readings
-    Serial.print('\t');
-
     if (isCalibration)
     {
       calibrate_readings[i] -= backgroundAverage;
+      Serial.print(calibrate_readings[i], 1); // Print the sensor readings
     }
     else
     {
       readings[i] -= backgroundAverage;
+      Serial.print(readings[i], 1); // Print the sensor readings
     }
+    Serial.print('\t');
   }
   Serial.println();
 }
@@ -208,7 +211,10 @@ void makeIFTTTRequest()
   Serial.println(resource);
 
   // Temperature in Celsius
-  String jsonObject = String("{\"value1\":\"") + readings[0] + ";" + readings[1] + ";" + readings[2] + ";" + readings[3] + ";" + readings[4] + ";" + readings[5] + ";" + readings[6] + ";" + readings[7] + "\"}";
+  String jsonObject = String("{\"value1\":\"") + readings[0] + ";" + readings[1] + ";" + readings[2] + ";" + readings[3] + ";" + readings[4] + ";" + readings[5] + ";" + readings[6] + ";" + readings[7] + ";" 
+                                               + normalized[0] + ";" + normalized[1] + ";" + normalized[2] + ";" + normalized[3] + ";" + normalized[4] + ";" + normalized[5] + ";" + normalized[6] + ";" + normalized[7] + ";" 
+                                               + snv[0] + ";" + snv[1] + ";" + snv[2] + ";" + snv[3] + ";" + snv[4] + ";" + snv[5] + ";" + snv[6] + ";" + snv[7] + ";" 
+                                               + snvScaled[0] + ";" + snvScaled[1] + ";" + snvScaled[2] + ";" + snvScaled[3] + ";" + snvScaled[4] + ";" + snvScaled[5] + ";" + snvScaled[6] + ";" + snvScaled[7] +"\"}";
 
   // Comment the previous line and uncomment the next line to publish temperature readings in Fahrenheit
   /*String jsonObject = String("{\"value1\":\"") + (1.8 * bme.readTemperature() + 32) + "\",\"value2\":\""
@@ -360,7 +366,7 @@ void setup()
     u8g2.sendBuffer();                // Transfer internal memory to the display
     scanMode = true;
     initWifi();
-    delay(2000);                      // Wait for 3 seconds before starting calibration
+    delay(2000); // Wait for 3 seconds before starting calibration
   }
 
   u8g2.clearBuffer();               // Clear the internal memory of the display
@@ -384,11 +390,11 @@ void loop()
       for (int i = 0; i < 8; i++)
       {
         normalized[i] = (float)readings[i] / (float)calibrate_readings[i];
-        normalized[i] = normalized[i]; // Scale the normalized values to 0-1000 to get more resolution
+        normalized[i] = normalized[i] * scaler; // Scale the normalized values to 0-1000 to get more resolution
       }
 
       // Check quality of the sample
-      if (normalized[0] > TooBright)
+      if (normalized[0] > (TooBright * scaler))
       {
         Serial.println("Sample too bright");
         u8g2.clearBuffer();               // Clear the internal memory of the display
@@ -396,7 +402,7 @@ void loop()
         u8g2.sendBuffer();                // Transfer internal memory to the display
         delay(2000);                      // Wait for 2 seconds
       }
-      else if (normalized[0] < TooDark)
+      else if (normalized[0] < (TooDark * scaler))
       {
         Serial.println("Sample too dark");
         u8g2.clearBuffer();              // Clear the internal memory of the display
@@ -414,10 +420,15 @@ void loop()
         for (int i = 0; i < 8; i++)
         {
           snv[i] = (normalized[i] - mean) / std;
-          snv[i] = snv[i] * 1000000; // Scale the SNV values to 0-1000 to get more resolution
+          snv[i] = snv[i] * scaler; // Scale the SNV values to 0-1000 to get more resolution
         }
         ///////////upload new scan//////////
-
+        // scale from +2.5 and -2.5
+        for (int i = 0; i < 8; i++)
+        {
+          snvScaled[i] = (snv[i] - minSNV) / (maxSNV - minSNV);
+          snvScaled[i] = snvScaled[i] * scaler; // Scale the SNV values to 0-1000 to get more resolution
+        }
         makeIFTTTRequest();
         u8g2.clearBuffer();               // Clear the internal memory of the display
         u8g2.drawStr(0, 16, "Uploaded!"); // Display "Scan" on the screen
@@ -465,6 +476,7 @@ void loop()
       for (int i = 0; i < 8; i++)
       {
         normalized[i] = (float)readings[i] / (float)calibrate_readings[i];
+        normalized[i] = normalized[i] * scaler; // Scale the normalized values to 0-1000 to get more resolution
       }
       u8g2.clearBuffer(); // Clear the internal memory of the display
       // Check quality of the sample
@@ -493,13 +505,21 @@ void loop()
         for (int i = 0; i < 8; i++)
         {
           snv[i] = (normalized[i] - mean) / std;
-          // snv[i] = snv[i] * 1000000; // Scale the SNV values to 0-1000 to get more resolution
+          snv[i] = snv[i] * scaler; // Scale the SNV values to 0-1000 to get more resolution
         }
+        ///////////upload new scan//////////
+        // scale from +2.5 and -2.5
+        for (int i = 0; i < 8; i++)
+        {
+          snvScaled[i] = (snv[i] - minSNV) / (maxSNV - minSNV);
+          //snvScaled[i] = snvScaled[i] * scaler; // Scale the SNV values to 0-1000 to get more resolution
+        }
+
 
         ////// Run TensorFlow inference
         for (int i = 0; i < 8; i++)
         {
-          tflInputTensor->data.f[i] = snv[i]; // Set input tensor values with SNV-transformed data
+          tflInputTensor->data.f[i] = snvScaled[i]; // Set input tensor values with SNV-transformed data
         }
         TfLiteStatus invokeStatus = tflInterpreter->Invoke(); // Run the inference
         if (invokeStatus != kTfLiteOk)
