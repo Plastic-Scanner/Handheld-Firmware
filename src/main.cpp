@@ -21,7 +21,7 @@ PCA9551 ledDriver(0x60); // Create an instance of the PCA9551 LED driver
 #include <tensorflow/lite/micro/micro_interpreter.h>
 #include <tensorflow/lite/schema/schema_generated.h>
 // #include <tensorflow/lite/version.h>
-#include "2024-01-26_model.h" // Include the machine learning model
+#include "2024-03-15_model.h" // Include the machine learning model
 #include "secrets.h"          // Include the machine learning model
 // Global variables for TensorFlow Lite (Micro)
 tflite::MicroErrorReporter tflErrorReporter;
@@ -35,11 +35,13 @@ byte tensorArena[tensorArenaSize] __attribute__((aligned(16)));
 
 // Array to map plastic index to a name
 const char *PLASTICS[] = {
-    "PET",
-    "PMMA",
-    "PC",
-    "PS",
-    "Other"};
+    "Unknown",
+    "HDPE",
+    "LDPE",
+    "PP",
+    "PLA",
+    "PVC",
+    "PETG"};
 #define NUM_PLASTICS (sizeof(PLASTICS) / sizeof(PLASTICS[0]))
 
 ////////////////////////screen//////////////////////
@@ -51,7 +53,7 @@ U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/U8X8_PIN_NONE);
 // Define threshold values for brightness and darkness
 #define TooBright 1.50
 #define TooDark 0.5
-#define NoDifference 0.95
+#define offset 0.02
 float scaler = 1000000;
 // sensor readings
 float readings[8];
@@ -60,8 +62,8 @@ float normalized[8];
 float snv[8];
 float background[2];
 float snvScaled[8];
-float minSNV = -2.5*scaler;
-float maxSNV = 2.5*scaler;
+float minSNV = -2.5 * scaler;
+float maxSNV = 2.5 * scaler;
 // Button configuration
 const int buttonPin = 26; // the number of the pushbutton pin
 int buttonState = 0;      // variable for reading the pushbutton status
@@ -187,7 +189,6 @@ bool preprocess()
     Serial.println("Sample too dark");
     u8g2.drawStr(0, 16, "Too Dark"); // Display "Too Dark" on the screen
     return false;
-
   }
   else
   {
@@ -451,7 +452,7 @@ void loop()
   else // this is the interpretation mode, where it scans and inputs the data to the tensorflow model
   {
 
-    int currentButtonState = digitalRead(buttonPin); //checks the state of the button, if flips states on the button press
+    int currentButtonState = digitalRead(buttonPin); // checks the state of the button, if flips states on the button press
 
     // Check if button state has changed
     if (currentButtonState != buttonState)
@@ -478,7 +479,14 @@ void loop()
       performScan(false);
       /////// preprocess data
       sample = preprocess();
-      if (sample) //if all is correct it will run the model
+      Serial.println(normalized[7] / scaler);
+      if ((normalized[7] / scaler) > (1 - offset) && (normalized[7] / scaler) < (1 + offset))
+        {
+          Serial.println("No Sample");
+          u8g2.drawStr(0, 16, "No Sample"); // Display "Too Bright" on the screen
+        }
+      
+      else // if all is correct it will run the model
       {
         // scale from +2.5 and -2.5
         for (int i = 0; i < 8; i++)
@@ -561,14 +569,7 @@ void loop()
           }
         }
       }
-      else //if not good it will end here and display the error in the next part
-      {
-        if (normalized[7] > NoDifference)
-        {
-          Serial.println("No Sample");
-          u8g2.drawStr(0, 16, "No Sample"); // Display "Too Bright" on the screen
-        }
-      }
+
 
       int measuredvbat = analogReadMilliVolts(VBATPIN);
       int batteryVoltage = map(measuredvbat, 1500, 2100, 0, 100); // Map the voltage to a percentage (0-100%)
