@@ -21,7 +21,7 @@ PCA9551 ledDriver(0x60); // Create an instance of the PCA9551 LED driver
 #include <tensorflow/lite/micro/micro_interpreter.h>
 #include <tensorflow/lite/schema/schema_generated.h>
 // #include <tensorflow/lite/version.h>
-#include "2024-03-15_model.h" // Include the machine learning model
+#include "2024-11-03_model.h" // Include the machine learning model
 #include "secrets.h"          // Include the machine learning model
 // Global variables for TensorFlow Lite (Micro)
 tflite::MicroErrorReporter tflErrorReporter;
@@ -35,13 +35,10 @@ byte tensorArena[tensorArenaSize] __attribute__((aligned(16)));
 
 // Array to map plastic index to a name
 const char *PLASTICS[] = {
-    "Unknown",
-    "HDPE",
-    "LDPE",
-    "PP",
     "PLA",
-    "PVC",
-    "PETG"};
+    "PETG",
+    "TPU",
+    "other"};
 #define NUM_PLASTICS (sizeof(PLASTICS) / sizeof(PLASTICS[0]))
 
 ////////////////////////screen//////////////////////
@@ -51,8 +48,8 @@ U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/U8X8_PIN_NONE);
 
 ////////////////////////other//////////////////////
 // Define threshold values for brightness and darkness
-#define TooBright 1.50
-#define TooDark 0.5
+#define TooBright 1.90
+#define TooDark 0.1
 #define offset 0.02
 float scaler = 1000000;
 // sensor readings
@@ -241,55 +238,57 @@ void initWifi()
 // Make an HTTP request to the IFTTT web service
 void makeIFTTTRequest()
 {
-  Serial.print("Connecting to ");
-  Serial.print(server);
+  String object_test = String("value1:") + readings[0] + ";" + readings[1] + ";" + readings[2] + ";" + readings[3] + ";" + readings[4] + ";" + readings[5] + ";" + readings[6] + ";" + readings[7] + ";" + normalized[0] + ";" + normalized[1] + ";" + normalized[2] + ";" + normalized[3] + ";" + normalized[4] + ";" + normalized[5] + ";" + normalized[6] + ";" + normalized[7] + ";" + snv[0] + ";" + snv[1] + ";" + snv[2] + ";" + snv[3] + ";" + snv[4] + ";" + snv[5] + ";" + snv[6] + ";" + snv[7] + ";" + snvScaled[0] + ";" + snvScaled[1] + ";" + snvScaled[2] + ";" + snvScaled[3] + ";" + snvScaled[4] + ";" + snvScaled[5] + ";" + snvScaled[6] + ";" + snvScaled[7];
+  Serial.print(object_test);
+  // Serial.print("Connecting to ");
+  // Serial.print(server);
 
-  WiFiClient client;
-  int retries = 5;
-  while (!!!client.connect(server, 80) && (retries-- > 0))
-  {
-    Serial.print(".");
-  }
-  Serial.println();
-  if (!!!client.connected())
-  {
-    Serial.println("Failed to connect...");
-  }
+  // WiFiClient client;
+  // int retries = 5;
+  // while (!!!client.connect(server, 80) && (retries-- > 0))
+  // {
+  //   Serial.print(".");
+  // }
+  // Serial.println();
+  // if (!!!client.connected())
+  // {
+  //   Serial.println("Failed to connect...");
+  // }
 
-  Serial.print("Request resource: ");
-  Serial.println(resource);
+  // Serial.print("Request resource: ");
+  // Serial.println(resource);
 
-  // Temperature in Celsius
-  String jsonObject = String("{\"value1\":\"") + readings[0] + ";" + readings[1] + ";" + readings[2] + ";" + readings[3] + ";" + readings[4] + ";" + readings[5] + ";" + readings[6] + ";" + readings[7] + ";" + normalized[0] + ";" + normalized[1] + ";" + normalized[2] + ";" + normalized[3] + ";" + normalized[4] + ";" + normalized[5] + ";" + normalized[6] + ";" + normalized[7] + ";" + snv[0] + ";" + snv[1] + ";" + snv[2] + ";" + snv[3] + ";" + snv[4] + ";" + snv[5] + ";" + snv[6] + ";" + snv[7] + ";" + snvScaled[0] + ";" + snvScaled[1] + ";" + snvScaled[2] + ";" + snvScaled[3] + ";" + snvScaled[4] + ";" + snvScaled[5] + ";" + snvScaled[6] + ";" + snvScaled[7] + "\"}";
+  // // Temperature in Celsius
+  // String jsonObject = String("{\"value1\":\"") + readings[0] + ";" + readings[1] + ";" + readings[2] + ";" + readings[3] + ";" + readings[4] + ";" + readings[5] + ";" + readings[6] + ";" + readings[7] + ";" + normalized[0] + ";" + normalized[1] + ";" + normalized[2] + ";" + normalized[3] + ";" + normalized[4] + ";" + normalized[5] + ";" + normalized[6] + ";" + normalized[7] + ";" + snv[0] + ";" + snv[1] + ";" + snv[2] + ";" + snv[3] + ";" + snv[4] + ";" + snv[5] + ";" + snv[6] + ";" + snv[7] + ";" + snvScaled[0] + ";" + snvScaled[1] + ";" + snvScaled[2] + ";" + snvScaled[3] + ";" + snvScaled[4] + ";" + snvScaled[5] + ";" + snvScaled[6] + ";" + snvScaled[7] + "\"}";
 
-  // Comment the previous line and uncomment the next line to publish temperature readings in Fahrenheit
-  /*String jsonObject = String("{\"value1\":\"") + (1.8 * bme.readTemperature() + 32) + "\",\"value2\":\""
-                      + (bme.readPressure()/100.0F) + "\",\"value3\":\"" + bme.readHumidity() + "\"}";*/
+  // // Comment the previous line and uncomment the next line to publish temperature readings in Fahrenheit
+  // /*String jsonObject = String("{\"value1\":\"") + (1.8 * bme.readTemperature() + 32) + "\",\"value2\":\""
+  //                     + (bme.readPressure()/100.0F) + "\",\"value3\":\"" + bme.readHumidity() + "\"}";*/
 
-  client.println(String("POST ") + resource + " HTTP/1.1");
-  client.println(String("Host: ") + server);
-  client.println("Connection: close\r\nContent-Type: application/json");
-  client.print("Content-Length: ");
-  client.println(jsonObject.length());
-  client.println();
-  client.println(jsonObject);
+  // client.println(String("POST ") + resource + " HTTP/1.1");
+  // client.println(String("Host: ") + server);
+  // client.println("Connection: close\r\nContent-Type: application/json");
+  // client.print("Content-Length: ");
+  // client.println(jsonObject.length());
+  // client.println();
+  // client.println(jsonObject);
 
-  int timeout = 5 * 10; // 5 seconds
-  while (!!!client.available() && (timeout-- > 0))
-  {
-    delay(100);
-  }
-  if (!!!client.available())
-  {
-    Serial.println("No response...");
-  }
-  while (client.available())
-  {
-    Serial.write(client.read());
-  }
+  // int timeout = 5 * 10; // 5 seconds
+  // while (!!!client.available() && (timeout-- > 0))
+  // {
+  //   delay(100);
+  // }
+  // if (!!!client.available())
+  // {
+  //   Serial.println("No response...");
+  // }
+  // while (client.available())
+  // {
+  //   Serial.write(client.read());
+  // }
 
-  Serial.println("\nclosing connection");
-  client.stop();
+  // Serial.println("\nclosing connection");
+  // client.stop();
 }
 
 void setup()
@@ -440,6 +439,8 @@ void loop()
       }
       else // if something is wrong it will end here do nothing and in the next part will display the error
       {
+        u8g2.drawStr(0, 16, "Error!"); // Display "Scan" on the screen
+
       }
       u8g2.sendBuffer();               // Transfer internal memory to the display
       delay(2000);                     // Wait for 2 seconds
@@ -565,6 +566,7 @@ void loop()
               u8g2.setCursor(72, 32);
               u8g2.print(int(tflOutputTensor->data.f[maxLikelihoodIndex] * 100)); // Display likelihood as a percentage
               u8g2.print("%");
+              delay(2000); 
             }
           }
         }
